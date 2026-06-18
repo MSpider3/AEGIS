@@ -1,0 +1,46 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python Caching & Test Coverage
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+coverage.json
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Rust Build Artifacts
+target/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# AEGIS Testing - Generated Assets & Artifacts
+# (These are dynamically recreated when running `python testing/run_audit.py`)
+testing/attack_samples/
+testing/generated_images/
+testing/transformed_images/
+testing/corrupted_files/
+testing/fuzz_inputs/
+testing/benchmark_data/
+testing/screenshots/
+testing/logs/
+testing/keys/
+testing/manifest.json
+testing/testing_manifest.md
+testing/audit_report_production.md
+testing/audit_report.md
+
+# Large temporary files
+edge_case_test.tif
+*.tmp
+*.log
+*.png.cloaked.png
+*.png.watermarked.png

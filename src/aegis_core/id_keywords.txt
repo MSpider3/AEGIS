@@ -1,0 +1,60 @@
+government
+identity
+id card
+identity card
+identite
+identidad
+identitaet
+document
+documento
+passport
+pasaporte
+passeport
+reisepass
+license
+licence
+licencia
+permis
+driver license
+driver licence
+permis de conduire
+führerschein
+dob
+birth
+birthdate
+nacimiento
+naissance
+geburtsdatum
+surname
+name
+nom
+apellido
+vorname
+card number
+document number
+passport number
+id number
+sex
+gender
+nationality
+nationalité
+nacionalidad
+expiration
+expiry
+valid
+expire
+expiration date
+expiry date
+aadhar
+pan card
+ssn
+social security
+voter card
+electoral
+registration
+republic
+state
+federal
+kingdom
+nation
+union

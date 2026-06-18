@@ -1,0 +1,11 @@
+{
+  "protect_time_hybrid_seconds": 25.0,
+  "protect_time_face_seconds": 20.0,
+  "protect_time_art_seconds": 10.0,
+  "watermark_extraction_accuracy_clean": 1.0,
+  "watermark_extraction_accuracy_jpg_q50": 0.0,
+  "watermark_extraction_accuracy_resize_05": 0.0,
+  "id_guard_detection_rate": 0.8,
+  "face_cloaking_success_rate": 0.9,
+  "poisoning_perturbation_survival_rate": 0.5
+}
