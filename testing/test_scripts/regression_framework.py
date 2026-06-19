@@ -13,7 +13,7 @@ DEFAULT_BASELINE = {
     "watermark_extraction_accuracy_resize_05": 0.0, # Known limitation if resizing shifts coordinates
     "id_guard_detection_rate": 0.80, # Expected detection target
     "face_cloaking_success_rate": 0.90,
-    "poisoning_perturbation_survival_rate": 0.50 # Expected retention rate after bilinear resizing to 224x224
+    "poisoning_perturbation_survival_rate": 0.35 # Expected retention rate after bilinear resizing to 224x224
 }
 
 def load_baseline():

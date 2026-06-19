@@ -52,6 +52,9 @@ PYTHONPATH=src venv/bin/python src/cli.py protect \
   -m hybrid \
   -k keys/aegis_private.pem \
   -w '{"author": "Jane Doe", "copyright": "2026", "license": "CC-BY-NC"}' \
+  --watermark-engine qim-frequency \
+  --block-size 16 \
+  --robustness-level aggressive \
   --accept-ethics
 ```
 
@@ -63,6 +66,7 @@ PYTHONPATH=src venv/bin/python src/cli.py protect \
   -m hybrid \
   -k 9876 \
   -w '{"author": "Jane Doe"}' \
+  --watermark-engine legacy \
   --accept-ethics
 ```
 
@@ -75,6 +79,9 @@ PYTHONPATH=src venv/bin/python src/cli.py protect \
   * `art`: Runs Rust frequency noise and watermark embedding. Ideal for digital art and landscapes.
 * **`-k` / `--key`**: Path to an Ed25519 PEM key file or a numeric/text seed.
 * **`-w` / `--watermark`**: A JSON string containing owner metadata.
+* **`--watermark-engine`**: Choose between `legacy` (sign-based 8x8 watermarking) and `qim-frequency` (robust Quantization Index Modulation watermarking, default).
+* **`--block-size`**: Block dimensions to use during frequency partitioning. Choices are `8`, `16`, `32`, or `64` (default: `8`).
+* **`--robustness-level`**: Choose the watermark strength profile: `standard` (adaptive) or `aggressive` (heavier embedding, default: `standard`).
 * **`--accept-ethics`**: Required flag acknowledging that you are not obfuscating official government IDs or documents.
 
 ---
@@ -88,20 +95,24 @@ Use your **public key** to verify ownership:
 ```bash
 PYTHONPATH=src venv/bin/python src/cli.py verify \
   -i protected_portrait.png \
-  -k keys/aegis_public.pem
+  -k keys/aegis_public.pem \
+  --watermark-engine qim-frequency \
+  --block-size 16 \
+  --robustness-level aggressive
 ```
 
 ### Example: Symmetric Key Verification (Backward Compatible)
 ```bash
 PYTHONPATH=src venv/bin/python src/cli.py verify \
   -i protected_portrait.png \
-  -k 9876
+  -k 9876 \
+  --watermark-engine legacy
 ```
 
 ### Verification Outputs
 * **On Success**: The CLI prints a success message and displays your decoded JSON payload.
 * **On Copy-Attack**: If the watermark was copied from another cover image, the verification succeeds but prints a prominent warning: `[WARNING] POTENTIAL COPY/REPLAY ATTACK DETECTED!`.
-* **On Failure**: Mismatched keys or corrupted payloads fail verification.
+* **On Failure**: Mismatched keys or corrupted payloads fail verification. Ensure the `--watermark-engine`, `--block-size`, and `--robustness-level` parameters match those specified during protection.
 
 ---
 

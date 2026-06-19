@@ -32,7 +32,11 @@ def generate_synthetic_images():
     img_1x1.save(os.path.join(BASE_TEMP, "generated_images", "tiny_1x1.jpg"), "JPEG")
     
     # 2. Medium 512x512 image (named medium_256.png for compatibility)
-    img_mid = Image.new("RGB", (512, 512), color=(0, 255, 0))
+    # Use high-contrast shapes to ensure perceptual aHash remains stable under PGD perturbation.
+    img_mid = Image.new("RGB", (512, 512), color=(128, 128, 128))
+    draw = ImageDraw.Draw(img_mid)
+    draw.rectangle([0, 0, 256, 512], fill=(40, 50, 60))
+    draw.ellipse([128, 128, 384, 384], fill=(220, 210, 200))
     img_mid.save(os.path.join(BASE_TEMP, "generated_images", "medium_256.png"), "PNG")
 
     # 3. Large 3000x3000 image

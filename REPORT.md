@@ -21,11 +21,11 @@ AEGIS operates on a three-tier hybrid architecture to ensure maximum performance
 
 ### 3.1. Asymmetric Cryptographic Watermarking
 The watermarking mechanism operates on the Y (luminance) channel of the YCbCr color space:
-1. **Block Selection**: The Y channel is divided into $8 \times 8$ non-overlapping blocks. A secure `ChaCha8Rng`, seeded with a key derived from the owner's public key PEM bytes, selects a pseudo-random sequence of blocks.
-2. **Frequency Transformation**: Selected blocks undergo a 2D Discrete Cosine Transform (DCT).
+1. **Block Selection**: The Y channel is divided into non-overlapping blocks of size $B \times B$ (where $B$ is configurable, e.g., 8, 16, 32, or 64). The QIM-frequency engine dynamically partitions the grid according to the user-specified block size. A secure `ChaCha8Rng`, seeded with a key derived from the owner's public key PEM bytes, selects a pseudo-random sequence of blocks.
+2. **Frequency Transformation**: Selected blocks undergo a 2D Discrete Cosine Transform (DCT) using dynamic matrix multiplication.
 3. **Asymmetric Signing (Ed25519)**: The metadata payload is serialized and signed using the owner's Ed25519 private key. The resulting signature is combined with the payload.
 4. **Confidentiality Encryption**: The combined payload and signature are encrypted using a ChaCha8-based stream cipher XOR key stream derived deterministically from the public key seed, preventing cleartext recovery by unauthorized extractors.
-5. **Differential Embedding**: Two mid-frequency coordinates, $p_1$ and $p_2$, are pseudo-randomly selected. To embed a bit `1`, coefficients are adjusted such that $DCT(p_1) - DCT(p_2) \ge \Delta$. To embed a bit `0`, they are adjusted such that $DCT(p_1) - DCT(p_2) \le -\Delta$.
+5. **Differential Embedding**: Performs Quantization Index Modulation (QIM) on the difference between the tournament-selected coefficient pair. It quantizes the difference `diff` to the nearest even multiple of $\Delta / 2$ for bit `1`, or the nearest odd multiple of $\Delta / 2$ for bit `0`. This quantization grid mapping significantly increases robustness to JPEG quantization noise.
 6. **Error Correction & Majority Voting**: The payload is repeated across all available blocks. During extraction, majority voting is performed across all blocks before alignment and signature verification, granting resilience to cropping and scaling.
 
 ### 3.2. Copy-Attack Mitigation (Perceptual aHash Binding)

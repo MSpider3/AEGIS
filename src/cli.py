@@ -131,6 +131,8 @@ Examples of Usage:
     wm_group = protect_parser.add_argument_group("Watermarking Settings")
     wm_group.add_argument("-k", "--key", type=str, default="1337", help="Secret key/seed for watermark and shuffling (default: 1337)")
     wm_group.add_argument("-w", "--watermark", type=str, help="Watermark JSON metadata payload string (e.g. '{\"author\":\"Jane\"}')")
+    wm_group.add_argument("--block-size", type=int, choices=[8, 16, 32, 64], default=8, help="Watermark block size (default: 8)")
+    wm_group.add_argument("--robustness-level", choices=["standard", "aggressive"], default="standard", help="Robustness scaling level (default: standard)")
     
     # AI Cloaking Optimization Group
     ai_group = protect_parser.add_argument_group("Adversarial Cloaking Settings")
@@ -154,6 +156,8 @@ Examples of Usage:
     )
     verify_parser.add_argument("-i", "--input", required=True, help="Path to protected image")
     verify_parser.add_argument("-k", "--key", type=str, default="1337", help="Secret numeric/text key used during embedding (default: 1337)")
+    verify_parser.add_argument("--block-size", type=int, choices=[8, 16, 32, 64], default=8, help="Watermark block size (default: 8)")
+    verify_parser.add_argument("--robustness-level", choices=["standard", "aggressive"], default="standard", help="Robustness scaling level (default: standard)")
 
     # ================= COMMAND: keygen =================
     keygen_parser = subparsers.add_parser(
@@ -314,8 +318,9 @@ Examples of Usage:
                         "image_hash": img_hash,
                         "signature": sig_hex
                     })
+                    delta = 80.0 if args.robustness_level == "aggressive" else 40.0
                     y_bytes = aegis_kernel.embed_watermark_py(
-                        y_bytes, width, height, wrapped_payload, seed, 40.0
+                        y_bytes, width, height, wrapped_payload, seed, delta, args.block_size
                     )
                 except ValueError as e:
                     print(f"[ERROR] Watermark embedding failed: {e}")
@@ -360,7 +365,10 @@ Examples of Usage:
             y_bytes = list(y_chan.tobytes())
             seed = parse_seed(args.key)
             
-            payload_raw = aegis_kernel.detect_watermark_py(y_bytes, width, height, seed)
+            delta = 80.0 if args.robustness_level == "aggressive" else 40.0
+            payload_raw = aegis_kernel.detect_watermark_py(
+                y_bytes, width, height, seed, args.block_size, delta
+            )
             data = json.loads(payload_raw)
             if not isinstance(data, dict) or "payload" not in data or "signature" not in data:
                 raise ValueError("Watermark signature format invalid or missing")
@@ -409,16 +417,7 @@ Examples of Usage:
                 print(f"Image Bind Hash: {embedded_hash}")
                 print("========================================")
             else:
-                # Legacy HMAC-SHA256 verification
-                expected_sig = hmac.new(args.key.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
-                if not hmac.compare_digest(data["signature"], expected_sig):
-                    raise ValueError("Watermark signature verification failed (forgery/overwriting detected)")
-
-                print("\n========================================")
-                print("[SUCCESS] WATERMARK DETECTED SUCCESSFULLY!")
-                print("========================================")
-                print(f"Decoded Payload: {payload} (Legacy signature)")
-                print("========================================")
+                raise ValueError("Watermark signature verification failed (missing image bind hash)")
         except (json.JSONDecodeError, TypeError, KeyError) as e:
             print("\n========================================")
             print("[FAILED] No valid watermark detected.")

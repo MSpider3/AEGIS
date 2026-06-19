@@ -17,9 +17,9 @@ AEGIS works by injecting mathematical noise and high-frequency patterns:
 
 ## 3. Lossless Output Formats
 When AEGIS outputs a protected image, it has precisely calculated the pixel values to preserve the adversarial noise and the invisible watermark.
-- **Do NOT save the output as a low-quality JPEG.** While AEGIS is designed to survive mild compression, saving the immediate output as a heavily compressed JPEG will destroy the watermark and weaken the adversarial noise.
-- The Python CLI outputs **PNG** files by default and will warn you if you attempt to save as a JPEG.
-**Best Practice**: Keep your master protected copies as PNG files. If you must upload to a platform that compresses images (like Twitter or Instagram), the PNG format ensures the highest possible starting quality before the platform compresses it.
+- **Avoid saving the output as heavily compressed JPEGs.** With the introduction of the modern `qim-frequency` engine, AEGIS watermarks are highly robust and can survive lossy JPEG compression down to Quality 75 (Q=75) as well as resizing. However, saving the immediate output as a heavily compressed JPEG (Q < 75) should still be avoided as it can destroy the watermark and weaken the adversarial noise.
+- The Python CLI outputs **PNG** files by default to preserve maximum protection integrity.
+**Best Practice**: Keep your master protected copies as PNG files. If you must upload to a platform that compresses images (like social media), the PNG format ensures the highest possible starting quality before the platform's compression occurs.
 
 ## 4. Copy-Attack Replay Warnings
 AEGIS includes built-in Average Hash (aHash) structural fingerprinting.

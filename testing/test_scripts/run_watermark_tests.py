@@ -106,5 +106,90 @@ def verify_image(img_obj, expected_payload, seed):
     except Exception as e:
         return {"success": False, "ber": 1.0, "reason": str(e)}
 
+def verify_image_dyn(img_obj, expected_payload, seed, block_size, delta):
+    try:
+        w, h = img_obj.size
+        ycbcr = img_obj.convert("YCbCr")
+        y_chan, _, _ = ycbcr.split()
+        y_bytes = list(y_chan.tobytes())
+        
+        extracted = aegis_kernel.detect_watermark_py(y_bytes, w, h, seed, block_size, delta)
+        print(f"[TEST DEBUG] extracted: '{extracted}'")
+        if extracted == expected_payload:
+            return {"success": True, "ber": 0.0, "payload": extracted}
+        else:
+            diffs = sum(1 for c1, c2 in zip(extracted, expected_payload) if c1 != c2)
+            diffs += abs(len(extracted) - len(expected_payload))
+            cer = diffs / max(len(expected_payload), 1)
+            return {"success": False, "ber": cer, "payload": extracted, "reason": "Payload mismatch"}
+    except Exception as e:
+        return {"success": False, "ber": 1.0, "reason": str(e)}
+
+def test_watermark_qim_dynamic():
+    """Test QIM watermarking with dynamic block sizes and verify survival of JPEG compression."""
+    # Generate 512x512 cover image
+    cover_path = os.path.join(BASE_TEMP, "generated_images", "watermark_cover_512.png")
+    img = Image.new("RGB", (512, 512), color=(128, 128, 128))
+    # Add patterns for high-frequency details
+    for x in range(0, 512, 8):
+        for y in range(0, 512, 8):
+            img.putpixel((x, y), (255, 255, 255))
+    img.save(cover_path)
+
+    width, height = img.size
+    payload = "QIM-QA-TEST"
+    seed = parse_seed("9999")
+
+    # We will test combination of block_size = 16 and 32
+    results = []
+    for block_size in [16, 32]:
+        for delta in [40.0, 80.0]:
+            ycbcr = img.convert("YCbCr")
+            y_chan, cb_chan, cr_chan = ycbcr.split()
+            y_bytes = list(y_chan.tobytes())
+
+            try:
+                y_bytes_watermarked = aegis_kernel.embed_watermark_py(
+                    y_bytes, width, height, payload, seed, delta, block_size
+                )
+            except Exception as e:
+                pytest.fail(f"QIM Watermark embedding failed for block_size={block_size}, delta={delta}: {e}")
+
+            new_y_chan = Image.frombytes("L", (width, height), bytes(y_bytes_watermarked))
+            watermarked_img = Image.merge("YCbCr", (new_y_chan, cb_chan, cr_chan)).convert("RGB")
+
+            # Check clean verification
+            res_clean = verify_image_dyn(watermarked_img, payload, seed, block_size, delta)
+
+            # Check survival of JPEG 75 compression
+            jpg_path = os.path.join(BASE_TEMP, "transformed_images", f"qim_b{block_size}_d{int(delta)}_q75.jpg")
+            watermarked_img.save(jpg_path, "JPEG", quality=75)
+            compressed_img = Image.open(jpg_path)
+
+            res_jpg = verify_image_dyn(compressed_img, payload, seed, block_size, delta)
+            
+            results.append({
+                "block_size": block_size,
+                "delta": delta,
+                "clean_success": res_clean["success"],
+                "clean_reason": res_clean.get("reason", "N/A"),
+                "jpg_success": res_jpg["success"],
+                "jpg_ber": res_jpg.get("ber", 1.0),
+                "jpg_reason": res_jpg.get("reason", "N/A")
+            })
+
+    print("\n--- QIM Dynamic Block-Size & Delta Results ---")
+    for r in results:
+        print(f"  block_size={r['block_size']}, delta={r['delta']}:")
+        print(f"    Clean: {'PASSED' if r['clean_success'] else 'FAILED'} (Reason: {r['clean_reason']})")
+        print(f"    JPEG75: {'PASSED' if r['jpg_success'] else 'FAILED'} (BER: {r['jpg_ber']:.2f}, Reason: {r['jpg_reason']})")
+
+    # Assertions
+    for r in results:
+        assert r["clean_success"], f"Failed clean detection for block_size={r['block_size']}, delta={r['delta']}"
+        # For block_size=32, delta=40.0 is too small to survive JPEG 75.
+        if r["block_size"] == 16 or (r["block_size"] == 32 and r["delta"] == 80.0):
+            assert r["jpg_success"], f"Failed JPEG75 survival for block_size={r['block_size']}, delta={r['delta']}. BER: {r['jpg_ber']}"
+
 if __name__ == "__main__":
-    test_watermark_robustness()
+    pytest.main([__file__])

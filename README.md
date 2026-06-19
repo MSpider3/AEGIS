@@ -147,16 +147,26 @@ PYTHONPATH=src venv/bin/python src/cli.py protect \
   -m hybrid \
   -k keys/aegis_private.pem \
   -w '{"author": "Jane Doe", "license": "CC-BY-NC"}' \
+  --watermark-engine qim-frequency \
+  --block-size 16 \
+  --robustness-level aggressive \
   --accept-ethics
 ```
 * **Modes (`-m`)**: `hybrid` (cloaking + watermark + noise), `face` (cloaking only), `art` (noise only).
+* **Watermark Options**:
+  * `--watermark-engine`: Engine type (`legacy` or `qim-frequency`, default: `qim-frequency`).
+  * `--block-size`: Shuffling grid block size (`8`, `16`, `32`, `64`, default: `8`).
+  * `--robustness-level`: Dynamic delta scaling profile (`standard` or `aggressive`, default: `standard`).
 
 ### 3. Verifying and Detecting Copy-Attacks (`verify`)
 Extract watermark ownership and verify perceptual bindings:
 ```bash
 PYTHONPATH=src venv/bin/python src/cli.py verify \
   -i protected.png \
-  -k keys/aegis_public.pem
+  -k keys/aegis_public.pem \
+  --watermark-engine qim-frequency \
+  --block-size 16 \
+  --robustness-level aggressive
 ```
 
 ---

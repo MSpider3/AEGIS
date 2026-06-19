@@ -26,53 +26,56 @@ impl Lcg {
     }
 }
 
-// 2. 8x8 2D DCT / IDCT Math
-fn get_dct_matrix() -> [[f64; 8]; 8] {
-    let mut c = [[0.0; 8]; 8];
-    for i in 0..8 {
-        for j in 0..8 {
+
+// 2b. Dynamic DCT / IDCT Math for configurable block sizes
+fn get_dct_matrix_dyn(b: usize) -> Vec<f64> {
+    let mut c = vec![0.0; b * b];
+    let sqrt_b = (b as f64).sqrt();
+    let sqrt_2_b = (2.0 / b as f64).sqrt();
+    for i in 0..b {
+        for j in 0..b {
             if i == 0 {
-                c[i][j] = 1.0 / (8.0f64).sqrt();
+                c[i * b + j] = 1.0 / sqrt_b;
             } else {
-                c[i][j] = (2.0 / 8.0f64).sqrt() * (((2 * j + 1) as f64 * i as f64 * std::f64::consts::PI) / 16.0).cos();
+                c[i * b + j] = sqrt_2_b * (((2 * j + 1) as f64 * i as f64 * std::f64::consts::PI) / (2.0 * b as f64)).cos();
             }
         }
     }
     c
 }
 
-fn transpose_8x8(a: &[[f64; 8]; 8]) -> [[f64; 8]; 8] {
-    let mut res = [[0.0; 8]; 8];
-    for i in 0..8 {
-        for j in 0..8 {
-            res[i][j] = a[j][i];
+fn transpose_dyn(a: &[f64], b: usize) -> Vec<f64> {
+    let mut res = vec![0.0; b * b];
+    for i in 0..b {
+        for j in 0..b {
+            res[i * b + j] = a[j * b + i];
         }
     }
     res
 }
 
-fn mat_mul_8x8(a: &[[f64; 8]; 8], b: &[[f64; 8]; 8]) -> [[f64; 8]; 8] {
-    let mut res = [[0.0; 8]; 8];
-    for i in 0..8 {
-        for j in 0..8 {
+fn mat_mul_dyn(a: &[f64], b_mat: &[f64], b: usize) -> Vec<f64> {
+    let mut res = vec![0.0; b * b];
+    for i in 0..b {
+        for j in 0..b {
             let mut sum = 0.0;
-            for k in 0..8 {
-                sum += a[i][k] * b[k][j];
+            for k in 0..b {
+                sum += a[i * b + k] * b_mat[k * b + j];
             }
-            res[i][j] = sum;
+            res[i * b + j] = sum;
         }
     }
     res
 }
 
-fn dct_8x8(block: &[[f64; 8]; 8], c: &[[f64; 8]; 8], c_t: &[[f64; 8]; 8]) -> [[f64; 8]; 8] {
-    let temp = mat_mul_8x8(c, block);
-    mat_mul_8x8(&temp, c_t)
+fn dct_dyn(block: &[f64], c: &[f64], c_t: &[f64], b: usize) -> Vec<f64> {
+    let temp = mat_mul_dyn(c, block, b);
+    mat_mul_dyn(&temp, c_t, b)
 }
 
-fn idct_8x8(dct_block: &[[f64; 8]; 8], c: &[[f64; 8]; 8], c_t: &[[f64; 8]; 8]) -> [[f64; 8]; 8] {
-    let temp = mat_mul_8x8(c_t, dct_block);
-    mat_mul_8x8(&temp, c)
+fn idct_dyn(dct_block: &[f64], c: &[f64], c_t: &[f64], b: usize) -> Vec<f64> {
+    let temp = mat_mul_dyn(c_t, dct_block, b);
+    mat_mul_dyn(&temp, c, b)
 }
 
 // 3. CRC8 implementation
@@ -146,14 +149,19 @@ fn get_selected_blocks(total_blocks: usize, count: usize, seed: u32) -> Vec<usiz
     selected
 }
 
-// Tournament Structure
-struct Candidate {
+
+struct CandidateDyn {
     p1: (usize, usize),
     p2: (usize, usize),
     g_score: u32,
 }
 
-fn tournament_select_pair(pin: u32, block_index: usize, k_candidates: usize) -> Candidate {
+fn tournament_select_pair_dyn(
+    pin: u32,
+    block_index: usize,
+    k_candidates: usize,
+    b: usize,
+) -> CandidateDyn {
     let mut hasher = Sha256::new();
     hasher.update(pin.to_le_bytes());
     hasher.update(block_index.to_le_bytes());
@@ -163,60 +171,57 @@ fn tournament_select_pair(pin: u32, block_index: usize, k_candidates: usize) -> 
     seed.copy_from_slice(&seed_hash[0..32]);
     let mut rng = ChaCha8Rng::from_seed(seed);
 
-    let mut best_candidate = Candidate { p1: (0,0), p2: (0,0), g_score: 0 };
+    let mut best_candidate = CandidateDyn { p1: (0,0), p2: (0,0), g_score: 0 };
+
+    let low = (b / 16).max(1);
+    let high = (b / 2 - b / 8).max(low + 2).min(b - 1);
 
     for _ in 0..k_candidates {
-        let p1 = (rng.gen_range(2..=5), rng.gen_range(2..=5));
-        let mut p2 = (rng.gen_range(2..=5), rng.gen_range(2..=5));
+        let p1 = (rng.gen_range(low..=high), rng.gen_range(low..=high));
+        let mut p2 = (rng.gen_range(low..=high), rng.gen_range(low..=high));
         while p1 == p2 {
-            p2 = (rng.gen_range(2..=5), rng.gen_range(2..=5));
+            p2 = (rng.gen_range(low..=high), rng.gen_range(low..=high));
         }
         
         let current_g_score = rng.gen::<u32>();
 
         if current_g_score > best_candidate.g_score {
-            best_candidate = Candidate { p1, p2, g_score: current_g_score };
+            best_candidate = CandidateDyn { p1, p2, g_score: current_g_score };
         }
     }
     
     best_candidate
 }
 
-// Dynamic Delta Calculation (Quantization Awareness)
-fn calculate_dynamic_delta(block: &[[f64; 8]; 8], base_delta: f64) -> f64 {
+
+fn calculate_dynamic_delta_dyn(block: &[f64], b: usize, base_delta: f64) -> f64 {
+    let len = b * b;
     let mut mean = 0.0;
-    for dy in 0..8 {
-        for dx in 0..8 {
-            mean += block[dy][dx];
-        }
+    for val in block {
+        mean += val;
     }
-    mean /= 64.0;
+    mean /= len as f64;
     
     let mut variance = 0.0;
-    for dy in 0..8 {
-        for dx in 0..8 {
-            let diff = block[dy][dx] - mean;
-            variance += diff * diff;
-        }
+    for val in block {
+        let diff = val - mean;
+        variance += diff * diff;
     }
-    variance /= 64.0;
+    variance /= len as f64;
     
     let std_dev = variance.sqrt();
-    base_delta * (1.0 + (std_dev / 50.0).clamp(0.0, 2.0))
-}
-
-// Grid shift generator
-fn get_grid_shifts(seed: u32) -> (usize, usize) {
-    let mut hasher = Sha256::new();
-    hasher.update(seed.to_le_bytes());
-    let seed_hash = hasher.finalize();
-    let mut root_seed = [0u8; 32];
-    root_seed.copy_from_slice(&seed_hash[0..32]);
-    let mut grid_rng = ChaCha8Rng::from_seed(root_seed);
     
-    let shift_x = grid_rng.gen_range(0..=4) as usize;
-    let shift_y = grid_rng.gen_range(0..=4) as usize;
-    (shift_x, shift_y)
+    // SSIM texture-adaptive scale:
+    // Low texture std_dev < 5.0 -> clamp to 0.8 * base_delta to avoid flat-area artifacts.
+    // High texture std_dev >= 50.0 -> boost up to 2.5 * base_delta.
+    if std_dev < 5.0 {
+        base_delta * 0.8
+    } else if std_dev >= 50.0 {
+        base_delta * 2.5
+    } else {
+        let factor = 0.8 + (2.5 - 0.8) * ((std_dev - 5.0) / 45.0);
+        base_delta * factor
+    }
 }
 
 // Core Watermark Embed Logic
@@ -227,18 +232,14 @@ pub fn embed_watermark_core(
     payload: &str,
     seed: u32,
     delta: f64,
+    block_size: usize,
 ) -> Result<Vec<u8>, String> {
-    let (shift_x, shift_y) = get_grid_shifts(seed);
-    
-    let usable_width = width.saturating_sub(shift_x);
-    let usable_height = height.saturating_sub(shift_y);
-    
-    if usable_width < 8 || usable_height < 8 {
-        return Err("Image too small after grid shift".to_string());
+    if width < block_size || height < block_size {
+        return Err("Image too small".to_string());
     }
 
-    let w_blocks = usable_width / 8;
-    let h_blocks = usable_height / 8;
+    let w_blocks = width / block_size;
+    let h_blocks = height / block_size;
     let total_blocks = w_blocks * h_blocks;
 
     let bits = construct_bitstream(payload, seed);
@@ -255,63 +256,60 @@ pub fn embed_watermark_core(
     let repetitions = total_blocks / bit_count;
     if repetitions == 0 {
         return Err(format!(
-            "Image too small. Needs at least {} blocks, but only has {} blocks.",
-            bit_count, total_blocks
+            "Image too small. Needs at least {} blocks of size {}, but only has {} blocks.",
+            bit_count, block_size, total_blocks
         ));
     }
 
     let blocks_to_process = repetitions * bit_count;
     let selected_blocks = get_selected_blocks(total_blocks, blocks_to_process, seed);
 
-    let c = get_dct_matrix();
-    let c_t = transpose_8x8(&c);
+    let c = get_dct_matrix_dyn(block_size);
+    let c_t = transpose_dyn(&c, block_size);
 
     for (i, &block_idx) in selected_blocks.iter().enumerate() {
         let bit = *bits.get(i % bit_count).unwrap_or(&0);
-        let block_y = shift_y + (block_idx / w_blocks) * 8;
-        let block_x = shift_x + (block_idx % w_blocks) * 8;
+        let block_y = (block_idx / w_blocks) * block_size;
+        let block_x = (block_idx % w_blocks) * block_size;
 
-        let mut block = [[0.0; 8]; 8];
-        for dy in 0..8 {
-            for dx in 0..8 {
+        let mut block = vec![0.0; block_size * block_size];
+        for dy in 0..block_size {
+            for dx in 0..block_size {
                 let idx = (block_y + dy) * width + (block_x + dx);
-                block[dy][dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
+                block[dy * block_size + dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
             }
         }
 
-        let dynamic_delta = calculate_dynamic_delta(&block, delta);
-        let mut dct_block = dct_8x8(&block, &c, &c_t);
+        let dynamic_delta = calculate_dynamic_delta_dyn(&block, block_size, delta);
+        let mut dct_block = dct_dyn(&block, &c, &c_t, block_size);
 
-        let target_pair = tournament_select_pair(seed, block_idx, 4);
+        let target_pair = tournament_select_pair_dyn(seed, block_idx, 4, block_size);
         let p1 = target_pair.p1;
         let p2 = target_pair.p2;
 
-        let val1 = dct_block[p1.0][p1.1];
-        let val2 = dct_block[p2.0][p2.1];
+        let idx1 = p1.0 * block_size + p1.1;
+        let idx2 = p2.0 * block_size + p2.1;
+        let val1 = dct_block[idx1];
+        let val2 = dct_block[idx2];
 
-        if bit == 1 {
-            if val1 - val2 < dynamic_delta {
-                let diff = val1 - val2;
-                let adj = (dynamic_delta - diff) / 2.0;
-                dct_block[p1.0][p1.1] += adj;
-                dct_block[p2.0][p2.1] -= adj;
-            }
+        let diff = val1 - val2;
+        let quantized_diff = if bit == 1 {
+            (diff / dynamic_delta).round() * dynamic_delta
         } else {
-            if val1 - val2 > -dynamic_delta {
-                let diff = val1 - val2;
-                let adj = (-dynamic_delta - diff) / 2.0;
-                dct_block[p1.0][p1.1] += adj;
-                dct_block[p2.0][p2.1] -= adj;
-            }
-        }
+            ((diff - dynamic_delta / 2.0) / dynamic_delta).round() * dynamic_delta + dynamic_delta / 2.0
+        };
 
-        let rec_block = idct_8x8(&dct_block, &c, &c_t);
+        let adj = (quantized_diff - diff) / 2.0;
+        dct_block[idx1] += adj;
+        dct_block[idx2] -= adj;
 
-        for dy in 0..8 {
-            for dx in 0..8 {
+        let rec_block = idct_dyn(&dct_block, &c, &c_t, block_size);
+
+        for dy in 0..block_size {
+            for dx in 0..block_size {
                 let idx = (block_y + dy) * width + (block_x + dx);
                 if let Some(pixel) = y_channel.get_mut(idx) {
-                    *pixel = rec_block[dy][dx].round().clamp(0.0, 255.0) as u8;
+                    *pixel = rec_block[dy * block_size + dx].round().clamp(0.0, 255.0) as u8;
                 }
             }
         }
@@ -320,29 +318,24 @@ pub fn embed_watermark_core(
     Ok(y_channel)
 }
 
-// Core Watermark Detect Logic
 pub fn detect_watermark_core(
     y_channel: &[u8],
     width: usize,
     height: usize,
     seed: u32,
+    block_size: usize,
+    delta: f64,
 ) -> Result<String, String> {
-    let (shift_x, shift_y) = get_grid_shifts(seed);
-    
-    let usable_width = width.saturating_sub(shift_x);
-    let usable_height = height.saturating_sub(shift_y);
-    
-    if usable_width < 8 || usable_height < 8 {
+    if width < block_size || height < block_size {
         return Err("Image too small".to_string());
     }
 
-    let w_blocks = usable_width / 8;
-    let h_blocks = usable_height / 8;
+    let w_blocks = width / block_size;
+    let h_blocks = height / block_size;
     let total_blocks = w_blocks * h_blocks;
 
-
-    let c = get_dct_matrix();
-    let c_t = transpose_8x8(&c);
+    let c = get_dct_matrix_dyn(block_size);
+    let c_t = transpose_dyn(&c, block_size);
 
     let selected_blocks = get_selected_blocks(total_blocks, total_blocks, seed);
     if selected_blocks.is_empty() {
@@ -350,30 +343,42 @@ pub fn detect_watermark_core(
     }
 
     let mut extracted_bits = Vec::with_capacity(selected_blocks.len());
-    for &block_idx in &selected_blocks {
-        let block_y = shift_y + (block_idx / w_blocks) * 8;
-        let block_x = shift_x + (block_idx % w_blocks) * 8;
 
-        let mut block = [[0.0; 8]; 8];
-        for dy in 0..8 {
-            for dx in 0..8 {
+    for &block_idx in &selected_blocks {
+        let block_y = (block_idx / w_blocks) * block_size;
+        let block_x = (block_idx % w_blocks) * block_size;
+
+        let mut block = vec![0.0; block_size * block_size];
+        for dy in 0..block_size {
+            for dx in 0..block_size {
                 let idx = (block_y + dy) * width + (block_x + dx);
-                block[dy][dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
+                block[dy * block_size + dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
             }
         }
 
-        let dct_block = dct_8x8(&block, &c, &c_t);
+        let dct_block = dct_dyn(&block, &c, &c_t, block_size);
 
-        let target_pair = tournament_select_pair(seed, block_idx, 4);
+        let target_pair = tournament_select_pair_dyn(seed, block_idx, 4, block_size);
         let p1 = target_pair.p1;
         let p2 = target_pair.p2;
 
-        let val1 = dct_block[p1.0][p1.1];
-        let val2 = dct_block[p2.0][p2.1];
+        let idx1 = p1.0 * block_size + p1.1;
+        let idx2 = p2.0 * block_size + p2.1;
+        let val1 = dct_block[idx1];
+        let val2 = dct_block[idx2];
 
-        let bit = if val1 > val2 { 1 } else { 0 };
+        let diff = val1 - val2;
+        let dynamic_delta = calculate_dynamic_delta_dyn(&block, block_size, delta);
+
+        let dist_even = (diff - (diff / dynamic_delta).round() * dynamic_delta).abs();
+        let dist_odd = (diff - (((diff - dynamic_delta / 2.0) / dynamic_delta).round() * dynamic_delta + dynamic_delta / 2.0)).abs();
+
+        let bit = if dist_even < dist_odd { 1 } else { 0 };
+
         extracted_bits.push(bit);
     }
+
+
 
     // Header decoding
     let header_bytes = b"AEGIS";
@@ -421,6 +426,8 @@ pub fn detect_watermark_core(
                     match_count += 1;
                 }
             }
+
+
 
             if match_count >= 36 {
                 let mut len_val = 0u8;
@@ -517,54 +524,50 @@ pub fn perturb_frequency_core(
     strength: f64,
     seed: u32,
 ) -> Vec<u8> {
-    let (shift_x, shift_y) = get_grid_shifts(seed);
-    
-    let usable_width = width.saturating_sub(shift_x);
-    let usable_height = height.saturating_sub(shift_y);
-    
-    if usable_width < 8 || usable_height < 8 {
+    let block_size = 8;
+    if width < block_size || height < block_size {
         return y_channel; // Too small, do nothing
     }
 
-    let w_blocks = usable_width / 8;
-    let h_blocks = usable_height / 8;
+    let w_blocks = width / block_size;
+    let h_blocks = height / block_size;
     let total_blocks = w_blocks * h_blocks;
 
-    let c = get_dct_matrix();
-    let c_t = transpose_8x8(&c);
+    let c = get_dct_matrix_dyn(block_size);
+    let c_t = transpose_dyn(&c, block_size);
 
     let mut rng = get_chacha_rng(seed);
 
     for block_idx in 0..total_blocks {
-        let block_y = shift_y + (block_idx / w_blocks) * 8;
-        let block_x = shift_x + (block_idx % w_blocks) * 8;
+        let block_y = (block_idx / w_blocks) * block_size;
+        let block_x = (block_idx % w_blocks) * block_size;
 
-        let mut block = [[0.0; 8]; 8];
-        for dy in 0..8 {
-            for dx in 0..8 {
+        let mut block = vec![0.0; block_size * block_size];
+        for dy in 0..block_size {
+            for dx in 0..block_size {
                 let idx = (block_y + dy) * width + (block_x + dx);
-                block[dy][dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
+                block[dy * block_size + dx] = *y_channel.get(idx).unwrap_or(&0) as f64;
             }
         }
 
-        let mut dct_block = dct_8x8(&block, &c, &c_t);
+        let mut dct_block = dct_dyn(&block, &c, &c_t, block_size);
 
-        for i in 0..8 {
-            for j in 0..8 {
+        for i in 0..block_size {
+            for j in 0..block_size {
                 let sum = i + j;
                 if sum >= 2 && sum <= 6 {
                     let noise = (rng.gen::<f64>() * 2.0 - 1.0) * strength;
-                    dct_block[i][j] += noise;
+                    dct_block[i * block_size + j] += noise;
                 }
             }
         }
 
-        let rec_block = idct_8x8(&dct_block, &c, &c_t);
-        for dy in 0..8 {
-            for dx in 0..8 {
+        let rec_block = idct_dyn(&dct_block, &c, &c_t, block_size);
+        for dy in 0..block_size {
+            for dx in 0..block_size {
                 let idx = (block_y + dy) * width + (block_x + dx);
                 if let Some(pixel) = y_channel.get_mut(idx) {
-                    *pixel = rec_block[dy][dx].round().clamp(0.0, 255.0) as u8;
+                    *pixel = rec_block[dy * block_size + dx].round().clamp(0.0, 255.0) as u8;
                 }
             }
         }
@@ -579,6 +582,7 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 #[pyfunction]
+#[pyo3(signature = (y_channel, width, height, payload, seed, delta, block_size=None))]
 fn embed_watermark_py(
     y_channel: Vec<u8>,
     width: usize,
@@ -586,20 +590,27 @@ fn embed_watermark_py(
     payload: String,
     seed: u32,
     delta: f64,
+    block_size: Option<usize>,
 ) -> PyResult<Vec<u8>> {
-    embed_watermark_core(y_channel, width, height, &payload, seed, delta)
+    let b_size = block_size.unwrap_or(8);
+    embed_watermark_core(y_channel, width, height, &payload, seed, delta, b_size)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
 }
 
 #[cfg(feature = "python")]
 #[pyfunction]
+#[pyo3(signature = (y_channel, width, height, seed, block_size=None, delta=None))]
 fn detect_watermark_py(
     y_channel: Vec<u8>,
     width: usize,
     height: usize,
     seed: u32,
+    block_size: Option<usize>,
+    delta: Option<f64>,
 ) -> PyResult<String> {
-    detect_watermark_core(&y_channel, width, height, seed)
+    let b_size = block_size.unwrap_or(8);
+    let d_val = delta.unwrap_or(40.0);
+    detect_watermark_core(&y_channel, width, height, seed, b_size, d_val)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
 }
 
@@ -637,8 +648,9 @@ pub fn embed_watermark_wasm(
     payload: &str,
     seed: u32,
     delta: f64,
+    block_size: usize,
 ) -> Result<Vec<u8>, String> {
-    embed_watermark_core(y_channel.to_vec(), width, height, payload, seed, delta)
+    embed_watermark_core(y_channel.to_vec(), width, height, payload, seed, delta, block_size)
 }
 
 #[cfg(feature = "web")]
@@ -648,8 +660,10 @@ pub fn detect_watermark_wasm(
     width: usize,
     height: usize,
     seed: u32,
+    block_size: usize,
+    delta: f64,
 ) -> Result<String, String> {
-    detect_watermark_core(y_channel, width, height, seed)
+    detect_watermark_core(y_channel, width, height, seed, block_size, delta)
 }
 
 #[cfg(feature = "web")]

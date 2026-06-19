@@ -37,6 +37,7 @@ testing/manifest.json
 testing/testing_manifest.md
 testing/audit_report_production.md
 testing/audit_report.md
+testing/baseline_metrics.json
 
 # Large temporary files
 edge_case_test.tif
@@ -44,3 +45,6 @@ edge_case_test.tif
 *.log
 *.png.cloaked.png
 *.png.watermarked.png
+
+# Documentation
+docs/
