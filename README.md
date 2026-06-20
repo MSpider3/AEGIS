@@ -17,6 +17,8 @@ By combining PyTorch-based adversarial face cloaking with a custom compiled Rust
 - [💡 AEGIS in a Nutshell](#-aegis-in-a-nutshell)
 - [🚀 Key Features](#-key-features)
 - [📁 Repository Structure](#-repository-structure)
+- [🏗️ System Architecture](#-system-architecture)
+- [📖 Project Documentation](#-project-documentation)
 - [💻 System Requirements](#-system-requirements)
 - [📦 Installation Guide](#-installation-guide)
 - [🛡️ Commands & Usage Examples](#-commands--usage-examples)
@@ -74,10 +76,128 @@ The repository has been structured to cleanly separate production source code fr
 ├── README.md                # README file
 ├── LICENSE                  # License file
 ├── SECURITY.md              # Security Policy
-├── USAGE_WARNING.md         # Usage Warning
+├── USAGE_WARNINGS.md        # Usage Warnings & Best Practices
 ├── ETHICS.md                # Ethics & Compliance
 └── HOW_TO_USE.md            # How to Use Guide
 ```
+
+---
+
+## 🏗️ System Architecture
+
+AEGIS is built as a modular Python-Rust hybrid pipeline. High-level orchestrations, compliance gatekeeping (ID-Guard), and deep neural network cloaking (Projected Gradient Descent) are handled in Python to leverage the rich machine learning ecosystem (PyTorch). Computationally intensive pixel-level and block-level transformations, asymmetric watermarking, and randomized coordinate shuffling are offloaded to a native compiled Rust library (`aegis_kernel`) bound via PyO3.
+
+The comprehensive diagram below details the end-to-end execution flow of both the **Protection Pipeline** (`cli.py protect`) and the **Verification/Extraction Pipeline** (`cli.py verify`):
+
+```mermaid
+flowchart TB
+    %% Core Styling
+    classDef python fill:#3572A5,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef rust fill:#dea584,stroke:#fff,stroke-width:2px,color:#333;
+    classDef file fill:#f5f5f5,stroke:#333,stroke-width:1px,color:#333;
+    classDef decision fill:#fff2cc,stroke:#d6b656,stroke-width:2px,color:#333;
+
+    subgraph UserInterface ["1. User CLI Entrypoint & Keys"]
+        CLI["cli.py (Command Parser)"]:::python
+        Keys["PEM Keypair (Ed25519)"]:::file
+        Seed["SHA-256 Seed Generator"]:::python
+        CLI -->|Loads Keys| Keys
+        Keys -->|Parse Seed| Seed
+    end
+
+    subgraph Gatekeeper ["2. Forensic Compliance (ID-Guard)"]
+        ImgIn["Source Image"]:::file
+        Analyzer["ImageAnalyzer (analyzer.py)"]:::python
+        OCR["Tesseract OCR Engine"]:::python
+        MRZ["MRZ Regex Matcher"]:::python
+        Barcode["PDF417 Barcode Decoder"]:::python
+        FlagDecision{"ID Detected?"}:::decision
+
+        ImgIn --> Analyzer
+        Analyzer --> OCR
+        Analyzer --> MRZ
+        Analyzer --> Barcode
+        OCR & MRZ & Barcode --> FlagDecision
+        FlagDecision -->|Yes| Flagged["Block / Request Override"]:::decision
+        FlagDecision -->|No| Clean["Proceed to Cloaking"]:::python
+    end
+
+    subgraph Cloaking ["3. Adversarial Cloaking Engine (PyTorch)"]
+        Cloaker["PgdCloaker (cloaking.py)"]:::python
+        Surrogate["Surrogate CNN Models (MobileNetV2 / ResNet18)"]:::python
+        PGD["Projected Gradient Descent (PGD Loop, L-inf budget)"]:::python
+        CloakedImg["Intermediate Cloaked Tensor"]:::python
+
+        Clean --> Cloaker
+        Cloaker --> Surrogate
+        Cloaker --> PGD
+        Surrogate --> PGD
+        PGD --> CloakedImg
+    end
+
+    subgraph RustDSP ["4. High-Performance DSP Kernel (aegis_kernel)"]
+        RGB2YCbCr["RGB to YCbCr Conversion"]:::python
+        YChannel["Extract Y (Luminance) Channel"]:::python
+        BlockSplit["8x8 Block Grid Segmentation"]:::rust
+        ChaChaShuffle["Block Coordinate Shuffling (ChaCha8Rng Key-Seeded)"]:::rust
+        DCT2D["2D Discrete Cosine Transform (DCT)"]:::rust
+        
+        subgraph Perturb ["Frequency Domain Manipulation"]
+            QIM["Quantization Index Modulation (QIM Watermarking)"]:::rust
+            FreqNoise["Mid-Frequency Noise Insertion"]:::rust
+            PayloadSign["Ed25519 Payload Signer (JSON + aHash Signature)"]:::python
+        end
+
+        IDCT2D["2D Inverse DCT (IDCT)"]:::rust
+        Unshuffle["Coordinate Unshuffling"]:::rust
+        MergeCh["Merge Channels & YCbCr to RGB"]:::python
+
+        CloakedImg --> RGB2YCbCr
+        RGB2YCbCr --> YChannel
+        YChannel --> BlockSplit
+        BlockSplit --> ChaChaShuffle
+        ChaChaShuffle --> DCT2D
+        DCT2D --> QIM & FreqNoise
+        PayloadSign -->|Wrapped Payload| QIM
+        QIM & FreqNoise --> IDCT2D
+        IDCT2D --> Unshuffle
+        Unshuffle --> MergeCh
+    end
+
+    subgraph Verification ["5. Watermark Verification & Copy-Attack Detection"]
+        ProtImg["Protected Image (.png)"]:::file
+        DetectWM["aegis_kernel.detect_watermark_py"]:::rust
+        JSONParse["Payload Parser & Verification"]:::python
+        EdVerify["Ed25519 Signature Verifier"]:::python
+        aHashVerify["Perceptual aHash Evaluator"]:::python
+        HammingDist{"Hamming Distance > 10?"}:::decision
+        
+        ProtImg --> DetectWM
+        DetectWM --> JSONParse
+        JSONParse --> EdVerify
+        JSONParse --> aHashVerify
+        aHashVerify --> HammingDist
+        
+        HammingDist -->|Yes| CopyWarning["WARNING: Copy/Replay Attack!"]:::decision
+        HammingDist -->|No| Success["Watermark Verified Successfully"]:::python
+    end
+
+    MergeCh -->|Saves Output| ProtImg
+```
+
+---
+
+## 📖 Project Documentation
+
+To help you navigate the AEGIS project and understand all aspects of deployment, security, ethics, and testing, the following dedicated documentation guides are available:
+
+* **[REPORT.md](REPORT.md) (Technical & Audit Report)**: Contains detailed information about the system architecture, mathematical & cryptographic foundations (such as QIM watermarking and aHash binding), branch coverage validation, and performance benchmarks.
+* **[HOW_TO_USE.md](HOW_TO_USE.md) (Operations & User Guide)**: A comprehensive, step-by-step walkthrough of installing AEGIS, setting up the hardware-optimized Python environment, building the Rust kernel, and using all CLI features (`keygen`, `protect`, `verify`, and `audit`).
+* **[USAGE_WARNINGS.md](USAGE_WARNINGS.md) (Usage Warnings & Best Practices)**: Crucial guide explaining the physical limits of cloaking and watermarking, recommendations for preserving watermark integrity (avoiding double-compression, scaling recommendations), and how to maximize protection.
+* **[ETHICS.md](ETHICS.md) (Ethics & Compliance)**: Outlines the Acceptable Use Policy, legal mandates, and technical implementations of the automated **ID-Guard** scanner designed to prevent abuse.
+* **[SECURITY.md](SECURITY.md) (Security Policy & Threat Model)**: Details the cryptographic boundaries of AEGIS, active threat models, security audits, key management practices, and instructions for reporting vulnerabilities.
+
+---
 
 ---
 
