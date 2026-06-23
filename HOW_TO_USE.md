@@ -22,6 +22,7 @@ AEGIS (Anonymous Encryption & Generative Image Shield) is a command-line utility
 6. [🧪 Running Quality Assurance Validation](#-running-quality-assurance-validation)
 7. [🎛️ Parameters Reference Guide](#-parameters-reference-guide)
 8. [💡 Best Practices for Watermark Integrity](#-best-practices-for-watermark-integrity)
+9. [🐳 Containerized Execution with Podman](#-containerized-execution-with-podman)
 
 ---
 
@@ -52,6 +53,9 @@ Install `maturin` and compile the optimized Rust discrete cosine transform (DCT)
 VIRTUAL_ENV=venv venv/bin/pip install maturin
 VIRTUAL_ENV=venv venv/bin/maturin develop --manifest-path aegis_kernel/Cargo.toml --features python
 ```
+
+### 4. Alternative: Running Containerized with Podman
+If you prefer not to install Python, Rust, and system libraries directly on your host machine, you can run all AEGIS commands inside a container. For a detailed guide on container usage, volume mounting, and directory mapping, refer to the [🐳 Containerized Execution with Podman](#-containerized-execution-with-podman) section.
 
 ---
 
@@ -359,3 +363,65 @@ To ensure that your invisible watermark can always be successfully extracted and
 1. **Never Save as JPG/JPEG**: Standard JPEGs run lossy high-frequency quantization, which destroys the micro-modulations introduced by QIM.
 2. **Preserve Aspect Ratio**: If you must resize the protected image, scale it proportionally. Non-uniform stretching can misalign the DCT grid.
 3. **Use Aggressive Profile for Web Uploads**: If you plan to post your protected image to social media platforms that run automated compression algorithms, protect the image using `--robustness-level aggressive` and `--block-size 16`.
+
+---
+
+## 🐳 Containerized Execution with Podman
+
+AEGIS can be run in a completely containerized manner using Podman. This isolates Python and system dependencies like Tesseract OCR, while permitting cryptographic signing keys and images to reside on the host filesystem via volume mounts.
+
+### 1. Build the Container Image
+Ensure you have Podman installed and run the following command in the root directory:
+```bash
+podman build -t aegis:latest .
+```
+
+### 2. Volume Mounting & SELinux Relabeling (`:Z`)
+When running containers rootless on Linux, Podman needs access to directories containing keys and images.
+We use the `-v` (volume mount) flag in the format `-v /host/path:/container/path:Z`.
+The `:Z` flag tells Podman to automatically relabel the directory's SELinux security context so that the container has permission to read and write to the host paths.
+
+### 3. Execution Commands & Scenarios
+
+#### Scenario A: Generating Keys (`keygen`)
+To generate Ed25519 public/private keys and write them to the host directory `./keys`:
+```bash
+podman run --rm -it \
+  -v ./keys:/keys:Z \
+  aegis:latest keygen -o /keys
+```
+
+#### Scenario B: Protecting an Image (`protect`)
+To apply hybrid protection on an image, mounting a host directory `./images` for input and output files, and `./keys` for the private key:
+```bash
+podman run --rm -it \
+  -v ./keys:/keys:Z \
+  -v ./images:/images:Z \
+  aegis:latest protect \
+  -i /images/original_portrait.jpg \
+  -o /images/protected_portrait.png \
+  -m hybrid \
+  -k /keys/aegis_private.pem \
+  -w '{"author": "Jane Doe", "copyright": "2026"}' \
+  --accept-ethics
+```
+
+#### Scenario C: Verifying a Protected Image (`verify`)
+To extract and verify the watermark from a protected image:
+```bash
+podman run --rm -it \
+  -v ./keys:/keys:Z \
+  -v ./images:/images:Z \
+  aegis:latest verify \
+  -i /images/protected_portrait.png \
+  -k /keys/aegis_public.pem
+```
+
+#### Scenario D: Querying Audit Logs (`audit`)
+To persist the audit log on the host, you can mount a file to map `/app/aegis_audit.log`:
+```bash
+podman run --rm -it \
+  -v ./aegis_audit.log:/app/aegis_audit.log:Z \
+  aegis:latest audit --lines 10
+```
+

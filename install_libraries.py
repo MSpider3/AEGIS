@@ -61,7 +61,7 @@ def main():
         install_cmd = [sys.executable, "-m", "pip", "install"] + torch_packages
     else:
         print("Preparing installation of CPU-only PyTorch...")
-        install_cmd = [sys.executable, "-m", "pip", "install"] + torch_packages
+        install_cmd = [sys.executable, "-m", "pip", "install"] + torch_packages + ["--index-url", "https://download.pytorch.org/whl/cpu"]
         
     # 1. Install GPU/CPU Torch Stack
     print("\n--- Step 1: Installing PyTorch Ecosystem ---")

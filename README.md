@@ -245,6 +245,18 @@ VIRTUAL_ENV=venv venv/bin/pip install maturin
 VIRTUAL_ENV=venv venv/bin/maturin develop --manifest-path aegis_kernel/Cargo.toml --features python
 ```
 
+### 4. Alternative: Run via Podman (Containerized)
+If you prefer to run AEGIS in an isolated environment without installing Python, Rust, or system libraries (like Tesseract) on your host, you can build and run it using Podman:
+
+```bash
+# Build the container image
+podman build -t aegis:latest .
+
+# Run the validation/audit suite to verify the installation
+podman run --rm -it --entrypoint python aegis:latest testing/run_audit.py
+```
+For detailed instructions on generating keys and protecting/verifying images using volume mounts, see **[HOW_TO_USE.md](HOW_TO_USE.md)**.
+
 ---
 
 ## 🛡️ Commands & Usage Examples
